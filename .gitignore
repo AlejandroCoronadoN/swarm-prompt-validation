@@ -2,9 +2,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.vscode/
 
 # C extensions
 *.so
+compost_tutorial.json
+prompt.json
 
 # Distribution / packaging
 .Python

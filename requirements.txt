@@ -1,0 +1,6 @@
+git+https://github.com/openai/swarm.git
+openai>=1.33.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+typing-extensions>=4.0.0
+loguru>=0.7.0 
