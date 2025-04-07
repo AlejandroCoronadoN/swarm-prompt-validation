@@ -70,17 +70,6 @@ class Orchestrator:
         def transfer_to_enhancement(context: Dict[str, Any]) -> Agent:
             """Transfer from manager to enhancement."""
             self.logger.info("Transferring to enhancement node")
-            # Log the transfer in the agent's context
-            self.manager_node.update_context(
-                context,
-                status="transferring",
-                message="Transferring to enhancement node",
-                node_history=context.get("node_history", []) + [{
-                    "node": "manager",
-                    "action": "transfer_to_enhancement",
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
-            )
             return self.enhancement_node.agent
 
         def transfer_to_processing(context: Dict[str, Any]) -> Agent:
@@ -136,12 +125,8 @@ class Orchestrator:
 
         return Agent(
             name="ManagerNode",
-            instructions="""You are the manager node for PDF processing.
-            1. First process the PDF content using process_pdf_content
-            2. If processing is successful, use transfer_to_enhancement to send to enhancement node
-            3. If there are errors, report them in the response""",
+            instructions=self.manager_node.instructions,
             functions=[
-                process_pdf_content,
                 self.transfer_functions["to_enhancement"]
             ]
         )
@@ -234,6 +219,7 @@ Please analyze this content and proceed with processing."""
 
             # Run the agent
             try:
+                self.logger.debug("Sending message to Swarm client")
                 response = self.client.run(
                     agent=self.manager_node.agent,
                     messages=[{
@@ -244,6 +230,7 @@ Please analyze this content and proceed with processing."""
                 
                 self.logger.debug(f"Raw response type: {type(response)}")
                 self.logger.debug(f"Raw response: {response}")
+                self.logger.debug(f"Response attributes: {dir(response)}")
 
                 # Initialize processing tracking
                 processing_history = []
@@ -251,6 +238,7 @@ Please analyze this content and proceed with processing."""
 
                 # Handle string response
                 if isinstance(response, str):
+                    self.logger.debug("Handling string response")
                     return {
                         "status": "success",
                         "result": response,
@@ -276,9 +264,13 @@ Please analyze this content and proceed with processing."""
 
                 # Handle response with messages
                 messages = getattr(response, 'messages', [])
+                self.logger.debug(f"Messages type: {type(messages)}")
+                self.logger.debug(f"Messages content: {messages}")
+                
                 if messages:
                     for message in messages:
                         self.logger.debug(f"Processing message: {message}")
+                        self.logger.debug(f"Message type: {type(message)}")
                         
                         # Convert string message to dict format
                         if isinstance(message, str):
@@ -288,6 +280,8 @@ Please analyze this content and proceed with processing."""
                             }
                         else:
                             message_dict = message
+
+                        self.logger.debug(f"Message dict: {message_dict}")
 
                         # Record the processing step
                         processing_history.append({
@@ -318,6 +312,7 @@ Please analyze this content and proceed with processing."""
 
                 else:
                     # Handle response without messages
+                    self.logger.debug("Handling response without messages")
                     final_content = str(response)
                     processing_history.append({
                         "role": "assistant",
@@ -342,11 +337,12 @@ Please analyze this content and proceed with processing."""
 
             except Exception as e:
                 self.logger.error(f"Agent execution failed: {str(e)}")
+                self.logger.error("Error details:", exc_info=True)
                 raise
 
         except Exception as e:
             self.logger.error(f"Processing failed: {str(e)}")
-            self.logger.debug("Error details:", exc_info=True)
+            self.logger.error("Error details:", exc_info=True)
             return {
                 "status": "error",
                 "error": str(e),
