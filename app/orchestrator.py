@@ -27,26 +27,14 @@ class Orchestrator:
         # Initialize Swarm client
         self.client = Swarm()
 
-        # Define transfer functions for each node
-        self._define_transfer_functions()
-
-        # Create nodes in reverse order (to handle dependencies)
+        # Step 1: Create all nodes first
         self.completion_node = CompletionNode()
-        self.completion_node.agent = self._create_completion_agent()
-
         self.review_node = ReviewNode()
-        self.review_node.agent = self._create_review_agent()
-
         self.validation_node = ValidationNode()
-        self.validation_node.agent = self._create_validation_agent()
-
         self.processing_node = ProcessingNode()
-        self.processing_node.agent = self._create_processing_agent()
-
         self.enhancement_node = EnhancementNode()
-        self.enhancement_node.agent = self._create_enhancement_agent()
 
-        # Create available nodes dictionary
+        # Step 2: Create available nodes dictionary
         self.available_nodes = {
             "enhancement": self.enhancement_node,
             "processing": self.processing_node,
@@ -55,7 +43,17 @@ class Orchestrator:
             "completion": self.completion_node
         }
 
-        # Initialize manager with available nodes and its agent
+        # Step 3: Create transfer functions
+        self._define_transfer_functions()
+
+        # Step 4: Create agents for each node
+        self.completion_node.agent = self._create_completion_agent()
+        self.review_node.agent = self._create_review_agent()
+        self.validation_node.agent = self._create_validation_agent()
+        self.processing_node.agent = self._create_processing_agent()
+        self.enhancement_node.agent = self._create_enhancement_agent()
+
+        # Step 5: Create manager node with access to all other nodes
         self.manager_node = ManagerNode(self.available_nodes)
         self.manager_node.agent = self._create_manager_agent()
         
@@ -144,25 +142,42 @@ class Orchestrator:
 
         return Agent(
             name="EnhancementNode",
-            instructions="""You are the enhancement node.
-            1. Enhance the content using enhance_content
-            2. Transfer to processing using transfer_to_processing""",
+            instructions=self.enhancement_node.instructions,
             functions=[
-                enhance_content,
                 self.transfer_functions["to_processing"]
             ]
         )
 
     def _create_processing_agent(self) -> Agent:
         """Create processing node agent."""
+        def process_content(context: Dict[str, Any]) -> Dict[str, Any]:
+            """Process the content."""
+            self.logger.info("Processing content")
+            return {
+                "role": "function",
+                "name": "process_content",
+                "content": "Content processed and ready for validation"
+            }
+
         return Agent(
             name="ProcessingNode",
             instructions=self.processing_node.instructions,
-            functions=[self.transfer_functions["to_validation"]]
+            functions=[
+                self.transfer_functions["to_validation"]
+            ]
         )
 
     def _create_validation_agent(self) -> Agent:
         """Create validation node agent."""
+        def validate_content(context: Dict[str, Any]) -> Dict[str, Any]:
+            """Validate the content."""
+            self.logger.info("Validating content")
+            return {
+                "role": "function",
+                "name": "validate_content",
+                "content": "Content validated successfully"
+            }
+
         return Agent(
             name="ValidationNode",
             instructions=self.validation_node.instructions,
@@ -174,18 +189,38 @@ class Orchestrator:
 
     def _create_review_agent(self) -> Agent:
         """Create review node agent."""
+        def review_content(context: Dict[str, Any]) -> Dict[str, Any]:
+            """Review the content."""
+            self.logger.info("Reviewing content")
+            return {
+                "role": "function",
+                "name": "review_content",
+                "content": "Content reviewed and ready for manager"
+            }
+
         return Agent(
             name="ReviewNode",
             instructions=self.review_node.instructions,
-            functions=[self.transfer_functions["to_manager"]]
+            functions=[
+                self.transfer_functions["to_manager"]
+            ]
         )
 
     def _create_completion_agent(self) -> Agent:
         """Create completion node agent."""
+        def complete_content(context: Dict[str, Any]) -> Dict[str, Any]:
+            """Complete the content processing."""
+            self.logger.info("Completing content processing")
+            return {
+                "role": "function",
+                "name": "complete_content",
+                "content": "Content processing completed successfully"
+            }
+
         return Agent(
             name="CompletionNode",
             instructions=self.completion_node.instructions,
-            functions=[]  # No transfers needed for completion node
+            functions=[complete_content]
         )
 
     def process_pdf(self, pdf_text: str, user_prompt: str) -> Dict[str, Any]:
@@ -206,7 +241,7 @@ class Orchestrator:
 
             self.logger.info("Starting PDF processing")
             
-            # Format the message content as a string
+            # Format the message content
             message_content = f"""Process this PDF content according to the user's prompt.
 
 PDF Content:
@@ -217,9 +252,8 @@ User Prompt:
 
 Please analyze this content and proceed with processing."""
 
-            # Run the agent
+            # Run the agent chain starting with manager
             try:
-                self.logger.debug("Sending message to Swarm client")
                 response = self.client.run(
                     agent=self.manager_node.agent,
                     messages=[{
@@ -230,15 +264,9 @@ Please analyze this content and proceed with processing."""
                 
                 self.logger.debug(f"Raw response type: {type(response)}")
                 self.logger.debug(f"Raw response: {response}")
-                self.logger.debug(f"Response attributes: {dir(response)}")
 
-                # Initialize processing tracking
-                processing_history = []
-                current_context = initial_context
-
-                # Handle string response
+                # Process the response
                 if isinstance(response, str):
-                    self.logger.debug("Handling string response")
                     return {
                         "status": "success",
                         "result": response,
@@ -250,11 +278,6 @@ Please analyze this content and proceed with processing."""
                             }],
                             "node_notes": [response],
                             "node_error": [],
-                            "processing_history": [{
-                                "role": "assistant",
-                                "content": response,
-                                "timestamp": datetime.utcnow().isoformat()
-                            }],
                             "processing_time": {
                                 "start": initial_context["processing_metadata"]["start_time"],
                                 "end": datetime.utcnow().isoformat()
@@ -264,70 +287,34 @@ Please analyze this content and proceed with processing."""
 
                 # Handle response with messages
                 messages = getattr(response, 'messages', [])
-                self.logger.debug(f"Messages type: {type(messages)}")
-                self.logger.debug(f"Messages content: {messages}")
-                
                 if messages:
-                    for message in messages:
-                        self.logger.debug(f"Processing message: {message}")
-                        self.logger.debug(f"Message type: {type(message)}")
-                        
-                        # Convert string message to dict format
-                        if isinstance(message, str):
-                            message_dict = {
-                                "role": "assistant",
-                                "content": message
-                            }
-                        else:
-                            message_dict = message
-
-                        self.logger.debug(f"Message dict: {message_dict}")
-
-                        # Record the processing step
-                        processing_history.append({
-                            "role": message_dict.get("role", "unknown"),
-                            "content": message_dict.get("content", ""),
-                            "name": message_dict.get("name", ""),
-                            "timestamp": datetime.utcnow().isoformat()
-                        })
-
-                        # Update node history for function calls
-                        if message_dict.get("role") == "function":
-                            current_context["node_history"].append({
-                                "node": message_dict.get("name", "unknown").split("_")[0],
-                                "action": message_dict.get("name", "unknown"),
-                                "timestamp": datetime.utcnow().isoformat()
-                            })
-
-                        # Record assistant messages as notes
-                        if message_dict.get("role") == "assistant":
-                            current_context["node_notes"].append(message_dict.get("content", ""))
-
-                    # Get final result from last message
                     final_message = messages[-1]
                     if isinstance(final_message, str):
                         final_content = final_message
                     else:
                         final_content = final_message.get("content", "")
 
-                else:
-                    # Handle response without messages
-                    self.logger.debug("Handling response without messages")
-                    final_content = str(response)
-                    processing_history.append({
-                        "role": "assistant",
-                        "content": final_content,
-                        "timestamp": datetime.utcnow().isoformat()
-                    })
+                    return {
+                        "status": "success",
+                        "result": final_content,
+                        "metadata": {
+                            "node_history": initial_context["node_history"],
+                            "node_notes": initial_context["node_notes"],
+                            "node_error": initial_context["node_error"],
+                            "processing_time": {
+                                "start": initial_context["processing_metadata"]["start_time"],
+                                "end": datetime.utcnow().isoformat()
+                            }
+                        }
+                    }
 
                 return {
                     "status": "success",
-                    "result": final_content,
+                    "result": str(response),
                     "metadata": {
-                        "node_history": current_context["node_history"],
-                        "node_notes": current_context["node_notes"],
-                        "node_error": current_context["node_error"],
-                        "processing_history": processing_history,
+                        "node_history": initial_context["node_history"],
+                        "node_notes": initial_context["node_notes"],
+                        "node_error": initial_context["node_error"],
                         "processing_time": {
                             "start": initial_context["processing_metadata"]["start_time"],
                             "end": datetime.utcnow().isoformat()
