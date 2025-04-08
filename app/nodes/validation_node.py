@@ -1,23 +1,23 @@
-"""Validation node for PDF processing system."""
+"""Validation node for verifying answers based on PDF content."""
 
 import logging
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from swarm import Agent
 
 from ..core.base_node import NodeBase, NodeCategory
-from ..models.pdf_context import PDFContext
 from ..utils.logging_config import setup_logger
 
 
 class ValidationNode(NodeBase):
-    """Validation node for verifying processing results.
+    """Validation node for verifying generated answers against source PDF content.
     
     This node is responsible for:
-    1. Validating generated responses
-    2. Checking accuracy against PDF content
-    3. Ensuring all requirements are met
-    4. Determining if review is needed
+    1. Validating the accuracy of processed content against the source PDF
+    2. Identifying any factual errors or inconsistencies
+    3. Flagging content that needs improvement
+    4. Providing specific feedback for correction
+    5. Routing to Review node for error correction or Completion node for final processing
     """
     
     # Class-level logger
@@ -28,111 +28,136 @@ class ValidationNode(NodeBase):
         super().__init__(
             category=NodeCategory.VALIDATION,
             name="ValidationNode",
-            instructions="""You are the Validation node for PDF processing. 
-            You are in charge of validating the pdf content and response and decide if we can finish the chain or if we need to continue the chain by another review cycle. You will be in charge of approving or rejecting this response. This means that you will use all the evidence to guratee that the response is accurate and truthful. If the answr is convinced enough you willsend the response dictinary to the completion node to finish the process. However, if you detect the information or the answer is not accurate or can be improved you will start a second round of review and use your other function to call the review_node and let this agent solves the problem.
-
-            Insert your final response on the response key. 
+            instructions="""You are the Validation node for ensuring content accuracy.
+            
+            Your role is to carefully validate the processed answer against the original PDF 
+            content to ensure accuracy, completeness, and adherence to the original prompt.
+            
+            You will process a dictionary that contains:
             {
-                "node_notes": [], <-final chain
-                "node_error": [], <- final chain
-                "node_history": [], <- final chain
-                "node_status": [], <-final chain
-                "response": "" <-final chain
+                "node_notes": [], <- Previous processing notes
+                "node_error": [], <- Previous error list
+                "node_history": [], <- Previous processing history
+                "node_status": [], <- Previous status
+                "response": {
+                    "pdf_content": "Original PDF content",
+                    "original_prompt": "User's original question",
+                    "enhanced_prompt": "Enhanced prompt with requirements",
+                    "content_structure": {
+                        "sections": [...],
+                        "required_elements": [...],
+                        "formatting": "..."
+                    },
+                    "extracted_information": {
+                        "key_points": [...],
+                        "relevant_quotes": [...],
+                        "sections": {...}
+                    },
+                    "draft_outline": "Structured outline",
+                    "answer": "The generated answer to validate"
+                }
             }
             
-             
-            1. Read the final response on respose key. Since your job is only to validate this response you can just pass the response as it is without modifying it. For all the other fields you can add you node name ValidationNode and the action, funciton you took (which node are you calling).  
-
-            2. Add any decorations to retrieve this response back to the user, take into account that this user is using our pdf summary application. So you might want to say something like "Here is the final answer to your question."
-            3. You can use additional questions using the node_notes list. This is to keep the conversation going or maybe inform the user all the topic or datails you find in the document and how they relate to the user question.
-            3. You MUST pass the information as a json object that contains the following fields: 
-                - node_notes: a list of strings that contains the summaries of the content
-                - node_error: a list of strings that contains the errors that occurred during processing
-                - node_history: a list of dictionaries that contains the node history
-                - node_status: a string that contains the status of the node
-                - response: a string that contains the response from the node
-
-            4. response: You will need to paste the pdf content into you response on the field called response. 
-            5. node_notes: Your summary should be included node_notes appending your answer to the end of the list.    
-            6. node_error: If there are errors, report them in the node_error elemnt of your response. Include your ValidationNode before the error string so I can tell who detected the error in my swarm system.
-            7. node_history: Inside node_history append your node name and the action, funciton you took (which node are you calling). ValidationNode.
-            8. node_status: should be "success" if there are no errors. Append stauts to the list.
+            If you're receiving this context for a second time (during a review cycle), the response may also include:
+            {
+                "validation_result": {
+                    "passed": false,
+                    "score": 0-100,
+                    "feedback": "Previous validation feedback",
+                    "issues": [...]
+                },
+                "review_notes": "Notes from the review node"
+            }
             
-            Since you are a validation you a chain like this:
+            VALIDATION STEPS:
+            1. Compare the answer against the PDF content
+            2. Check for factual accuracy and completeness
+            3. Ensure the answer addresses the original prompt
+            4. Identify any mistakes, omissions, or inaccuracies
+            5. Check for proper citations and references
+            
+            ROUTING DECISION:
+            - If validation passes (score >= 70): Transfer to Completion node
+            - If validation fails (score < 70): Transfer to Review node for correction
+            
             OUTPUT:
-            First and only response:
-            {
-                "node_notes": [], <-Insert your first notes here / Approved or not approved, can't be empty, if nothing to add add " "
-                "node_error": [], <-Insert your first error here / list is not empty, can't be empty, if nothing to add add " "
-                "node_history": [], <-Insert your first history here / list is not empty, can't be empty, if nothing to add add " "
-                "node_status": [], <-Insert your first status here / list is not empty, can't be empty, if nothing to add add " "
-                "response": "" <-Insert your first response here, can't be empty, if nothing to add add " "
+            Response:
+                "node_notes": [], <- Append validation notes (preserving previous notes)
+                "node_error": [], <- Append validation errors if any, or " " if none (preserving previous errors)
+                "node_history": [], <- Append validation record (preserving previous history)
+                "node_status": [], <- Append "validation_passed" or "validation_failed" (preserving previous status)
+                "response": {
+                    # Preserve all previous content unchanged
+                    "pdf_content": the original PDF content (unchanged),
+                    "original_prompt": the user's original prompt (unchanged),
+                    "enhanced_prompt": "Enhanced prompt (unchanged)",
+                    "content_structure": {...} (unchanged),
+                    "extracted_information": {...} (unchanged),
+                    "draft_outline": "..." (unchanged),
+                    "answer": the original answer (unchanged),
+                    # Add validation result
+                    "validation_result": {
+                        "passed": true/false,
+                        "score": 0-100,
+                        "feedback": "Detailed feedback on the answer",
+                        "issues": [
+                            {
+                                "type": "factual_error/omission/etc.",
+                                "description": "Specific issue description",
+                                "correction": "Suggested correction"
+                            }
+                        ]
+                    }
+                }
             }
-            Each insertion should be an string and a unqiue element appended to the list.
-            
-            It's very important that you follow this format. The next node expects this format. To continue the chain you need to append your response to the list and append the status to the list. 
-            
-      
-            Since you are a validation node you will get a final response that has been already processed by the other nodes. You need to approved or disapprove this response and use the respective function to continue the chain.
-            on your notes you can isert you final response and the status Approved or not approved but you should change the field response. 
-            If you get a second iteration of the same request it means that you already disapproved a response and the other nodes started a new review cycle by providing more information or more dteails to answr the same question. 
-            
-            If you think that we can't continue the chain because the error is related to the user-interface-system interaction, you need to return a response that contains the error and insert it in the node_error list. You will need to detect if this error has a solution, if not then you will still need to call the completion node to finish the process and insert in the response and the node_error list the error.
-            
-            The completion node will know that something went wrong because the node_error list will not be empty and your status and respnose will be "error". Don't forget to explain why you decided to disapprove the response by additing comments into the node_notes list. 
-            
             """,
+            functions=[]
         )
-        self.available_nodes: Dict[str, Dict[str, Any]] = {}
-        self.agent = self._create_agent()
+        self.available_nodes = {}
         self.logger.info("Validation node initialized")
 
     @property
     def uses_swarm(self) -> bool:
         return True
 
-    def _create_agent(self) -> Agent:
-        return Agent(
-            name=self.name,
-            instructions=self.instructions,
-            functions=[
-                self.transfer_to_completion,
-                self.transfer_to_review
-            ]
-        )
-
-    def transfer_to_completion(self, context: Dict[str, Any]) -> Agent:
-        """Transfer to completion node if validation passes."""
-        self.update_context(
-            context,
-            status="success",
-            message="Validation passed, transferring to completion"
-        )
-        return self.available_nodes["completion"].agent
-
-    def transfer_to_review(self, context: Dict[str, Any]) -> Agent:
-        """Transfer to review node if validation fails."""
-        self.update_context(
-            context,
-            status="review_needed",
-            message="Validation failed, transferring to review"
-        )
-        return self.available_nodes["review"].agent
-
-    def handle_error(self, context: Dict[str, Any]) -> Agent:
-        """Handle validation errors.
+    def validate_content(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate the content against the PDF source.
         
         Args:
             context: Current processing context
             
         Returns:
-            Agent: The current node (self) to handle the error
+            Dict[str, Any]: Updated context with validation results
+        """
+        self.logger.info("Validating content against PDF source")
+        
+        try:
+            # Add validation logic here
+            return context
+        except Exception as e:
+            self.logger.error(f"Content validation failed: {str(e)}")
+            return self.handle_error(context)
+
+    def handle_error(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle validation errors.
+        
+        Args:
+            context: Current validation context
+            
+        Returns:
+            Dict[str, Any]: Updated context with error information
         """
         self.logger.error("Validation error occurred")
-        context.update({
-            "status": "error",
-            "message": "Validation failed",
-            "node_error": ["Validation failed"],
-            "validation_failed": True
-        })
-        return self 
+        if isinstance(context, dict):
+            context.update({
+                "node_status": ["error"] if "node_status" not in context else context["node_status"] + ["error"],
+                "node_error": ["ValidationNode: Validation failed"] if "node_error" not in context else context["node_error"] + ["ValidationNode: Validation failed"],
+            })
+        else:
+            context = {
+                "node_status": ["error"],
+                "node_error": ["ValidationNode: Validation failed"],
+                "node_history": [],
+                "node_notes": []
+            }
+        return context 

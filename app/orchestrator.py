@@ -24,15 +24,21 @@ class Orchestrator:
         """Initialize the orchestrator with all nodes."""
         self.logger.info("Initializing Orchestrator")
         
-        # Initialize Swarm client
-        self.client = Swarm()
-
+        # Initialize node history for tracking
+        self.node_history = []
+        
+        # Initialize Swarm client with debug logging
+        self.client = Swarm()  # Initialize Swarm client
+        self.logger.info("Swarm client initialized")
+        
         # Step 1: Create all nodes first
+        self.logger.info("Creating nodes...")
         self.completion_node = CompletionNode()
         self.review_node = ReviewNode()
         self.validation_node = ValidationNode()
         self.processing_node = ProcessingNode()
         self.enhancement_node = EnhancementNode()
+        self.logger.info("All nodes created")
 
         # Step 2: Create available nodes dictionary
         self.available_nodes = {
@@ -42,20 +48,23 @@ class Orchestrator:
             "review": self.review_node,
             "completion": self.completion_node
         }
+        self.logger.info(f"Available nodes: {list(self.available_nodes.keys())}")
 
         # Step 3: Create transfer functions
+        self.logger.info("Defining transfer functions...")
         self._define_transfer_functions()
+        self.logger.info("Transfer functions defined")
 
         # Step 4: Create agents for each node
-        self.completion_node.agent = self._create_completion_agent()
-        self.review_node.agent = self._create_review_agent()
-        self.validation_node.agent = self._create_validation_agent()
-        self.processing_node.agent = self._create_processing_agent()
-        self.enhancement_node.agent = self._create_enhancement_agent()
+        self.logger.info("Creating agents for nodes...")
+        self._create_agents()
+        self.logger.info("All node agents created")
 
         # Step 5: Create manager node with access to all other nodes
+        self.logger.info("Creating manager node...")
         self.manager_node = ManagerNode(self.available_nodes)
         self.manager_node.agent = self._create_manager_agent()
+        self.logger.info("Manager node created")
         
         # Add manager to available nodes for review->manager connection
         self.available_nodes["manager"] = self.manager_node
@@ -65,34 +74,100 @@ class Orchestrator:
     def _define_transfer_functions(self):
         """Define transfer functions for node connections."""
         
-        def transfer_to_enhancement(context: Dict[str, Any]) -> Agent:
+        def transfer_to_enhancement(context):
             """Transfer from manager to enhancement."""
-            self.logger.info("Transferring to enhancement node")
+            self.logger.info("🔄 TRANSFER: Manager → Enhancement")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "manager",
+                    "action": "transfer_to_enhancement",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.enhancement_node.agent
 
-        def transfer_to_processing(context: Dict[str, Any]) -> Agent:
+        def transfer_to_processing(context):
             """Transfer from enhancement to processing."""
-            self.logger.info("Transferring to processing node")
+            self.logger.info("🔄 TRANSFER: Enhancement → Processing")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "enhancement",
+                    "action": "transfer_to_processing",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.processing_node.agent
 
-        def transfer_to_validation(context: Dict[str, Any]) -> Agent:
+        def transfer_to_validation(context):
             """Transfer from processing to validation."""
-            self.logger.info("Transferring to validation node")
+            self.logger.info("🔄 TRANSFER: Processing → Validation")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "processing",
+                    "action": "transfer_to_validation",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.validation_node.agent
 
-        def transfer_to_review(context: Dict[str, Any]) -> Agent:
+        def transfer_to_review(context):
             """Transfer from validation to review (on failure)."""
-            self.logger.info("Transferring to review node")
+            self.logger.info("🔄 TRANSFER: Validation → Review (Validation Failed)")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "validation",
+                    "action": "transfer_to_review",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.review_node.agent
 
-        def transfer_to_completion(context: Dict[str, Any]) -> Agent:
+        def transfer_to_completion(context):
             """Transfer from validation to completion (on success)."""
-            self.logger.info("Transferring to completion node")
+            self.logger.info("🔄 TRANSFER: Validation → Completion (Validation Passed)")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "validation",
+                    "action": "transfer_to_completion",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.completion_node.agent
 
-        def transfer_to_manager(context: Dict[str, Any]) -> Agent:
+        def transfer_to_manager(context):
             """Transfer from review back to manager."""
-            self.logger.info("Transferring back to manager node")
+            self.logger.info("🔄 TRANSFER: Review → Manager")
+            self.logger.debug(f"Context type: {type(context)}")
+            self.logger.debug(f"Context at transfer time: {context}")
+            
+            # Track in the orchestrator's context
+            if hasattr(self, 'node_history'):
+                self.node_history.append({
+                    "node": "review",
+                    "action": "transfer_to_manager",
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            
             return self.manager_node.agent
 
         self.transfer_functions = {
@@ -126,7 +201,8 @@ class Orchestrator:
             instructions=self.manager_node.instructions,
             functions=[
                 self.transfer_functions["to_enhancement"]
-            ]
+            ],
+            tool_choice="auto"
         )
 
     def _create_enhancement_agent(self) -> Agent:
@@ -145,7 +221,8 @@ class Orchestrator:
             instructions=self.enhancement_node.instructions,
             functions=[
                 self.transfer_functions["to_processing"]
-            ]
+            ],
+            tool_choice="auto"
         )
 
     def _create_processing_agent(self) -> Agent:
@@ -164,7 +241,8 @@ class Orchestrator:
             instructions=self.processing_node.instructions,
             functions=[
                 self.transfer_functions["to_validation"]
-            ]
+            ],
+            tool_choice="auto"
         )
 
     def _create_validation_agent(self) -> Agent:
@@ -184,7 +262,8 @@ class Orchestrator:
             functions=[
                 self.transfer_functions["to_completion"],
                 self.transfer_functions["to_review"]
-            ]
+            ],
+            tool_choice="auto"
         )
 
     def _create_review_agent(self) -> Agent:
@@ -203,7 +282,8 @@ class Orchestrator:
             instructions=self.review_node.instructions,
             functions=[
                 self.transfer_functions["to_manager"]
-            ]
+            ],
+            tool_choice="auto"
         )
 
     def _create_completion_agent(self) -> Agent:
@@ -223,15 +303,41 @@ class Orchestrator:
             functions=[complete_content]
         )
 
+    def _create_agents(self):
+        """Create agents for all nodes."""
+        self.logger.info("Creating agents for nodes")
+        
+        # First, set available_nodes for each node
+        self.logger.info("Setting up node connections")
+        for node_name, node in self.available_nodes.items():
+            node.available_nodes = self.available_nodes
+            self.logger.info(f"Set available_nodes for {node_name}")
+        
+        # Now create the agents
+        self.logger.info("Creating completion agent")
+        self.completion_node.agent = self._create_completion_agent()
+        
+        self.logger.info("Creating review agent")
+        self.review_node.agent = self._create_review_agent()
+        
+        self.logger.info("Creating validation agent")
+        self.validation_node.agent = self._create_validation_agent()
+        
+        self.logger.info("Creating processing agent")
+        self.processing_node.agent = self._create_processing_agent()
+        
+        self.logger.info("Creating enhancement agent")
+        self.enhancement_node.agent = self._create_enhancement_agent()
+
     def process_pdf(self, pdf_text: str, user_prompt: str) -> Dict[str, Any]:
         """Process PDF using the node chain."""
         try:
+            # Reset node history for this run
+            self.node_history = []
+            
             initial_context = {
                 "pdf_text": pdf_text,
                 "user_prompt": user_prompt,
-                "node_history": [],
-                "node_notes": [],
-                "node_error": [],
                 "processing_metadata": {
                     "start_time": datetime.utcnow().isoformat(),
                     "source": "pdf_processor",
@@ -254,6 +360,9 @@ Please analyze this content and proceed with processing."""
 
             # Run the agent chain starting with manager
             try:
+                self.logger.info("Starting agent chain with manager node")
+                self.logger.debug(f"Initial context: {initial_context}")
+                
                 response = self.client.run(
                     agent=self.manager_node.agent,
                     messages=[{
@@ -264,19 +373,17 @@ Please analyze this content and proceed with processing."""
                 
                 self.logger.debug(f"Raw response type: {type(response)}")
                 self.logger.debug(f"Raw response: {response}")
+                self.logger.debug(f"Response attributes: {dir(response)}")
 
                 # Process the response
                 if isinstance(response, str):
+                    self.logger.info("Received string response")
                     return {
                         "status": "success",
                         "result": response,
                         "metadata": {
-                            "node_history": [{
-                                "node": "manager",
-                                "action": "direct_response",
-                                "timestamp": datetime.utcnow().isoformat()
-                            }],
-                            "node_notes": [response],
+                            "node_history": self.node_history,
+                            "node_notes": [],
                             "node_error": [],
                             "processing_time": {
                                 "start": initial_context["processing_metadata"]["start_time"],
@@ -288,19 +395,24 @@ Please analyze this content and proceed with processing."""
                 # Handle response with messages
                 messages = getattr(response, 'messages', [])
                 if messages:
+                    self.logger.info(f"Processing {len(messages)} messages")
+                    for i, msg in enumerate(messages):
+                        self.logger.debug(f"Message {i}: {msg}")
+                    
                     final_message = messages[-1]
                     if isinstance(final_message, str):
                         final_content = final_message
                     else:
                         final_content = final_message.get("content", "")
 
+                    self.logger.info("Processing completed successfully")
                     return {
                         "status": "success",
                         "result": final_content,
                         "metadata": {
-                            "node_history": initial_context["node_history"],
-                            "node_notes": initial_context["node_notes"],
-                            "node_error": initial_context["node_error"],
+                            "node_history": self.node_history,
+                            "node_notes": [],
+                            "node_error": [],
                             "processing_time": {
                                 "start": initial_context["processing_metadata"]["start_time"],
                                 "end": datetime.utcnow().isoformat()
@@ -308,13 +420,14 @@ Please analyze this content and proceed with processing."""
                         }
                     }
 
+                self.logger.warning("No messages in response")
                 return {
                     "status": "success",
                     "result": str(response),
                     "metadata": {
-                        "node_history": initial_context["node_history"],
-                        "node_notes": initial_context["node_notes"],
-                        "node_error": initial_context["node_error"],
+                        "node_history": self.node_history,
+                        "node_notes": [],
+                        "node_error": [],
                         "processing_time": {
                             "start": initial_context["processing_metadata"]["start_time"],
                             "end": datetime.utcnow().isoformat()
@@ -334,8 +447,8 @@ Please analyze this content and proceed with processing."""
                 "status": "error",
                 "error": str(e),
                 "metadata": {
-                    "node_history": initial_context.get("node_history", []),
-                    "node_notes": initial_context.get("node_notes", []),
+                    "node_history": self.node_history,
+                    "node_notes": [],
                     "node_error": [str(e)],
                     "processing_time": {
                         "start": initial_context["processing_metadata"]["start_time"],
@@ -344,13 +457,37 @@ Please analyze this content and proceed with processing."""
                 }
             }
 
-    def get_node_status(self) -> Dict[str, Any]:
-        """Get status of all nodes in the system."""
-        return {
-            node_name: {
-                "status": "active" if node.agent else "inactive",
-                "category": node.category.value,
-                "has_connections": bool(node.available_nodes)
+    def get_node_status(self) -> Dict[str, Dict[str, str]]:
+        """Get status of all nodes for debugging purposes."""
+        self.logger.info("Getting node status")
+        status = {}
+        
+        for node_name, node in self.available_nodes.items():
+            node_type = node.__class__.__name__
+            has_agent = hasattr(node, 'agent') and node.agent is not None
+            
+            status[node_name] = {
+                "status": "initialized" if has_agent else "not initialized",
+                "type": node_type,
+                "category": self._get_node_category(node_type),
+                "has_agent": has_agent
             }
-            for node_name, node in self.available_nodes.items()
-        } 
+        
+        return status
+
+    def _get_node_category(self, node_type: str) -> str:
+        """Get the category of a node by its type."""
+        if "Manager" in node_type:
+            return "control"
+        elif "Enhancement" in node_type:
+            return "preprocessing"
+        elif "Processing" in node_type:
+            return "processing"
+        elif "Validation" in node_type:
+            return "validation"
+        elif "Review" in node_type:
+            return "review"
+        elif "Completion" in node_type:
+            return "completion"
+        else:
+            return "unknown" 

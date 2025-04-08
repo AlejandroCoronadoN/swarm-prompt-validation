@@ -1,23 +1,24 @@
-"""Review node for PDF processing system."""
+"""Review node for final answer polishing and formatting."""
 
 import logging
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from swarm import Agent
 
 from ..core.base_node import NodeBase, NodeCategory
-from ..models.pdf_context import PDFContext
 from ..utils.logging_config import setup_logger
 
 
 class ReviewNode(NodeBase):
-    """Review node for handling content that needs manual review.
+    """Review node for finalizing and polishing validated answers.
     
     This node is responsible for:
-    1. Reviewing flagged content for issues
-    2. Suggesting improvements and corrections
-    3. Transferring reviewed content to validation
-    4. Handling review-specific error cases
+    1. Improving the clarity and readability of validated content
+    2. Ensuring proper formatting and structure
+    3. Adding any missing context or explanations
+    4. Finalizing the answer for delivery to the user
+    5. Correcting issues identified by the validation node
+    6. Resubmitting content for validation after corrections
     """
     
     # Class-level logger
@@ -28,145 +29,140 @@ class ReviewNode(NodeBase):
         super().__init__(
             category=NodeCategory.REVIEW,
             name="ReviewNode",
-            instructions="""You are the Review node for PDF processing. 
-            You are in charge of reviewing the pdf content, the promp and the current response. If you are being called it's because some other node found an error in the response or the response is not accurate. These nodes are completion, enhancement and processing nodes. So you will try to fix this problem or understand why the error occurred. You need to come up with a solution or a plan to solve the problem. Your plan or solutions will be shared with the enhancements and processing nodes so they can help you complete the problem and find a proper answer to the user question.
+            instructions="""You are the Review node for final content polishing and error correction.
             
-            Your input will be a dicj
-            INPUT:
+            Your role is to take validated content with identified issues and improve its accuracy, 
+            clarity, readability, and presentation before resubmitting it for validation.
+            
+            You will process a dictionary that contains:
             {
-                "node_notes": [], <-final chain
-                "node_error": [], <- final chain
-                "node_history": [], <- final chain
-                "node_status": [], <-final chain
-               "response": {
-                        pdf_content: pdf original documents,
-                        original_prompt: original user prompt,
-                        enhanced_prompt: enhanced user prompt
-                        answer: last node answer <- update this with your answer
-                    },      
-            }
-            
-             
-            1. Read the final response on respose.answer value.  
-
-            2. Add any recommendation suggestion for all the errors mentioned on the node_error or reply to the obetacles or problems mentioned on response.answer"
-            3. You can use additional questions using the node_notes list. This is to keep the conversation going or maybe inform the user all the topic or datails you find in the document and how they relate to the user question.
-            3. You MUST pass the information as a json object that contains the following fields: 
-                - node_notes: a list of strings that contains the summaries of the content
-                - node_error: a list of strings that contains the errors that occurred during processing
-                - node_history: a list of dictionaries that contains the node history
-                - node_status: a string that contains the status of the node
-                - response: a string that contains the response from the node
-
-            4. response: You will need to paste the pdf content into you response on the field called response. 
-            5. node_notes: Your summary should be included node_notes appending your answer to the end of the list.    
-            6. node_error: If there are errors, report them in the node_error elemnt of your response. Include your ReviewNode before the error string so I can tell who detected the error in my swarm system.
-            7. node_history: Inside node_history append your node name and the action, funciton you took (which node are you calling). ReviewNode.
-            8. node_status: should be "success" if there are no errors. Append stauts to the list.
-            
-            Since you are a completion node you will be the last one to start this chain, and some elements and their respective list will not be empty. Append yourw response to the list. 
-            
-            {
-                "node_notes": [], <-Insert your first summary here / list is not empty
-                "node_error": [], <-Insert your first error here / list is not empty
-                "node_history": [], <-Insert your first history here / list is not empty
-                "node_status": [], <-Insert your first status here / list is not empty
-               "response": {
-                        pdf_content: pdf original documents,
-                        original_prompt: original user prompt,
-                        enhanced_prompt: enhanced user prompt
-                        answer: last node answer <- update this with your answer
-                    },      
-            }
-            
-            It's very important that you follow this format. The next node expects this format. To continue the chain you need to append your response to the list and append the status to the list. 
-            OUTPUT:
-            First and only Response:
-            {
-                "node_notes": [], <- Since you are reviewing why the cycle failed you will need to wirte here an explanation for the erros with potential solutions or a gide that will solve the user to complete their request or refine it.
-                "node_error": [], <-Insert your first error here / list is not empty, can't be empty, if nothing to add add " "
-                "node_history": [], <-Insert your first history here / list is not empty, can't be empty, if nothing to add add " "
-                "node_status": [], <-Insert your first status here / list is not empty, can't be empty, if nothing to add add " "
+                "node_notes": [], <- Previous processing notes
+                "node_error": [], <- Previous error list
+                "node_history": [], <- Previous processing history
+                "node_status": [], <- Previous status
                 "response": {
-                        pdf_content: pdf original documents,
-                        original_prompt: original user prompt,
-                        enhanced_prompt: enhanced user prompt <- this is the only field that you will need to update.
-                        answer: last node answer
-                    },   
+                    "pdf_content": "Original PDF content",
+                    "original_prompt": "User's original question",
+                    "enhanced_prompt": "Enhanced prompt with requirements",
+                    "content_structure": {
+                        "sections": [...],
+                        "required_elements": [...],
+                        "formatting": "..."
+                    },
+                    "extracted_information": {
+                        "key_points": [...],
+                        "relevant_quotes": [...],
+                        "sections": {...}
+                    },
+                    "draft_outline": "Structured outline",
+                    "answer": "The answer to review/correct",
+                    "validation_result": {
+                        "passed": false,
+                        "score": 0-100,
+                        "feedback": "Validation feedback",
+                        "issues": [
+                            {
+                                "type": "factual_error/omission/etc.",
+                                "description": "Specific issue description",
+                                "correction": "Suggested correction"
+                            }
+                        ]
+                    }
+                }
             }
             
-
-            Since you are a review node you will get a final response that has been already processed by the other nodes. You need to inclide any additional information that you think is relevant to the user question. Your main objective is to make solve the problem and guide all the other nodes to complete the task.
-            If you get a second iteration of the same request it means that you previous solution failed and some other node find some error in your rasoning or the response is not accurate. You need to solve the error of the previous node first before continuing the chain. 
+            REVIEW STEPS:
+            1. Review the validation result to understand issues identified
+            2. Correct the factual errors, omissions, or inaccuracies
+            3. Improve the answer based on validation feedback
+            4. Enhance clarity, coherence, and organization
+            5. Ensure proper formatting (headings, lists, etc.)
+            6. Add explanatory notes or context if needed
+            7. Prepare the corrected answer for revalidation
             
-            If you think that we can't continue the chain because the error is related to the user-interface-system interaction, you need to return a response that contains the error and insert it in the node_error list.
+            AFTER REVIEW: This content will be sent back to ValidationNode for revalidation
             
+            OUTPUT:
+            Response:
+                "node_notes": [], <- Append review notes (preserving previous notes)
+                "node_error": [], <- Append review errors if any, or " " if none (preserving previous errors)
+                "node_history": [], <- Append review record (preserving previous history)
+                "node_status": [], <- Append "review_completed" (preserving previous status)
+                "response": {
+                    # Preserve all previous fields unchanged
+                    "pdf_content": the original PDF content (unchanged),
+                    "original_prompt": the user's original prompt (unchanged),
+                    "enhanced_prompt": "Enhanced prompt (unchanged)",
+                    "content_structure": {...} (unchanged),
+                    "extracted_information": {...} (unchanged),
+                    "draft_outline": "..." (unchanged),
+                    "validation_result": {...} (unchanged),
+                    
+                    # Update the answer with corrections
+                    "answer": "The corrected, improved answer",
+                    
+                    # Add review information
+                    "review_notes": "Notes about changes made during review",
+                    "correction_summary": "Summary of corrections applied"
+                }
+            }
             """,
-            functions=[]  # No transfers needed for completion node
+            functions=[]
         )
-        self.available_nodes: Dict[str, Dict[str, Any]] = {}
-        self.agent = self._create_agent()
+        self.available_nodes = {}
         self.logger.info("Review node initialized")
 
     @property
     def uses_swarm(self) -> bool:
         return True
 
-    def _create_agent(self) -> Agent:
-        return Agent(
-            name=self.name,
-            instructions=self.instructions,
-            functions=[self.transfer_to_manager]
-        )
-
-    def transfer_to_manager(self, context: Dict[str, Any]) -> Agent:
-        """Transfer back to manager for reprocessing."""
-        self.update_context(
-            context,
-            status="review_complete",
-            message="Transferring back to manager for reprocessing"
-        )
-        return self.available_nodes["manager"].agent
-
-    def handle_error(self, context: Dict[str, Any]) -> Agent:
-        """Handle review-specific errors.
-        
-        Args:
-            context: Current processing context
-            
-        Returns:
-            Agent: The current node (self) to handle the error
-        """
-        self.logger.error("Review error occurred")
-        context.update({
-            "status": "error",
-            "message": "Review failed",
-            "node_error": ["Review failed"],
-            "validation_failed": True
-        })
-        return self
-
     def review_content(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Review the content and identify issues.
+        """Review the content and implement corrections based on validation feedback.
         
         Args:
-            context: Current processing context
+            context: Current processing context with validation results
             
         Returns:
-            Dict[str, Any]: Updated context with review results
+            Dict[str, Any]: Updated context with corrected content
         """
+        self.logger.info("Reviewing content and implementing corrections")
+        
         try:
-            self.logger.debug("Reviewing content")
-            # Add your review logic here
-            return {
-                **context,
-                "review_complete": True,
-                "review_status": "success",
-                "review_notes": []
-            }
+            # Add review logic here
+            if isinstance(context, dict):
+                context.update({
+                    "node_status": context.get("node_status", []) + ["review_completed"],
+                    "node_history": context.get("node_history", []) + ["ReviewNode: Content corrected based on validation feedback"],
+                    "node_notes": context.get("node_notes", []) + ["Implemented corrections to address validation issues"]
+                })
+            return context
         except Exception as e:
             self.logger.error(f"Content review failed: {str(e)}")
-            return self.handle_error(context, str(e))
+            return self.handle_error(context)
+
+    def handle_error(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle review errors.
+        
+        Args:
+            context: Current review context
+            
+        Returns:
+            Dict[str, Any]: Updated context with error information
+        """
+        self.logger.error("Review error occurred")
+        if isinstance(context, dict):
+            context.update({
+                "node_status": ["error"] if "node_status" not in context else context["node_status"] + ["error"],
+                "node_error": ["ReviewNode: Review failed"] if "node_error" not in context else context["node_error"] + ["ReviewNode: Review failed"],
+            })
+        else:
+            context = {
+                "node_status": ["error"],
+                "node_error": ["ReviewNode: Review failed"],
+                "node_history": [],
+                "node_notes": []
+            }
+        return context
 
     def suggest_improvements(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Suggest improvements for the content.

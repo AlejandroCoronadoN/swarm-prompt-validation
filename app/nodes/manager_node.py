@@ -18,19 +18,6 @@ class ManagerNode(NodeBase):
     
     def __init__(self, available_nodes: Dict[str, Any]) -> None:
         """Initialize the manager node."""
-        def validate_input(context: Dict[str, Any]) -> Dict[str, Any]:
-            """Validate the input before processing."""
-            self.logger.info("Validating input")
-            # Do validation work here
-            return {
-                "role": "function",
-                "name": "validate_input",
-                "content": {
-                    "validation_result": "valid",
-                    "next_step": "enhancement"
-                }
-            }
-
         super().__init__(
             category=NodeCategory.MANAGER,
             name="ManagerNode",
@@ -112,24 +99,8 @@ class ManagerNode(NodeBase):
     @property
     def uses_swarm(self) -> bool:
         return True
-
-    def _create_agent(self) -> Agent:
-        return Agent(
-            name=self.name,
-            instructions=self.instructions,
-            functions=[self.transfer_to_enhancement]
-        )
-
-    def transfer_to_enhancement(self, context: Dict[str, Any]) -> Agent:
-        """Transfer to enhancement node."""
-        self.update_context(
-            context,
-            status="success",
-            message="Transferring to enhancement node"
-        )
-        return self.available_nodes["enhancement"].agent
     
-    def handle_error(self, error: Exception, context: Dict[str, Any]) -> Agent:
+    def handle_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle errors during processing.
         
         Args:
@@ -137,12 +108,20 @@ class ManagerNode(NodeBase):
             context: Current processing context
             
         Returns:
-            Agent: The current node for error management
+            Dict[str, Any]: Updated context with error information
         """
         self.logger.error(f"Manager error: {str(error)}")
-        context["node_status"] = "error"
-        context["error"] = str(error)
-        return self
+        if isinstance(context, dict):
+            context["node_status"] = "error" if "node_status" not in context else context["node_status"] + ["error"]
+            context["node_error"] = [str(error)] if "node_error" not in context else context["node_error"] + [str(error)]
+        else:
+            context = {
+                "node_status": ["error"],
+                "node_error": [str(error)],
+                "node_history": [],
+                "node_notes": []
+            }
+        return context
 
     def process_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Process incoming message."""
